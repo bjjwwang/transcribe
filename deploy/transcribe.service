@@ -1,0 +1,22 @@
+# systemd user unit: drop into ~/.config/systemd/user/transcribe.service
+# then:
+#   loginctl enable-linger $USER  # so it runs without an active login session
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now transcribe
+#   systemctl --user status transcribe
+#   journalctl --user -u transcribe -f
+
+[Unit]
+Description=Transcribe web app (FastAPI + uvicorn)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/mnt/scratch/PAG/Wjw/transcribe
+ExecStart=/mnt/scratch/PAG/Wjw/transcribe/start.sh
+Restart=on-failure
+RestartSec=5
+Environment=COOKIE_SECURE=1
+
+[Install]
+WantedBy=default.target

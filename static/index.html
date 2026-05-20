@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Transcribe</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #181b22;
+    --panel-2: #20242d;
+    --border: #2a2f3a;
+    --text: #e6e8ee;
+    --muted: #8a91a0;
+    --accent: #6ea8ff;
+    --accent-hover: #84b6ff;
+    --error: #ff7676;
+    --ok: #58d68d;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100vh;
+  }
+  .wrap {
+    max-width: 720px; margin: 0 auto; padding: 48px 24px;
+  }
+  h1 {
+    font-size: 22px; font-weight: 600; margin: 0 0 24px;
+    letter-spacing: 0.5px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px;
+  }
+  .card + .card { margin-top: 16px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  input[type=password], input[type=text], input[type=number], select {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 12px 14px;
+    border-radius: 10px;
+    font-size: 14px;
+    outline: none;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  button {
+    background: var(--accent);
+    color: #0f1115;
+    border: none;
+    padding: 12px 18px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  button:hover:not(:disabled) { background: var(--accent-hover); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.secondary {
+    background: transparent; color: var(--text); border: 1px solid var(--border);
+  }
+  button.secondary:hover:not(:disabled) { background: var(--panel-2); }
+  .row { display: flex; gap: 12px; align-items: center; }
+  .row > * { flex: 1; }
+  .err { color: var(--error); font-size: 13px; margin-top: 10px; min-height: 16px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .drop {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 36px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: var(--panel-2);
+  }
+  .drop:hover, .drop.over {
+    border-color: var(--accent);
+    background: rgba(110, 168, 255, 0.05);
+  }
+  .drop .icon { font-size: 32px; margin-bottom: 8px; opacity: 0.7; }
+  .drop .hint { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .file-info {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 13px;
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  }
+  .file-info .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-info .size { color: var(--muted); flex-shrink: 0; }
+  .file-info .x { color: var(--muted); cursor: pointer; padding: 4px 8px; }
+  .progress-bar {
+    height: 8px; background: var(--panel-2); border-radius: 4px; overflow: hidden;
+    margin: 16px 0;
+  }
+  .progress-bar .fill {
+    height: 100%; background: var(--accent);
+    width: 0%; transition: width 0.3s;
+  }
+  .stage { font-size: 14px; margin-bottom: 4px; }
+  .stage-meta { color: var(--muted); font-size: 12px; }
+  .tip {
+    background: rgba(110, 168, 255, 0.08);
+    border: 1px solid rgba(110, 168, 255, 0.2);
+    color: #b8d2ff;
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 1.55;
+    margin-top: 16px;
+  }
+  pre.preview {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    font-size: 12px;
+    line-height: 1.55;
+    max-height: 360px; overflow: auto;
+    white-space: pre-wrap; word-break: break-word;
+    margin: 16px 0 0;
+  }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .hidden { display: none !important; }
+  .footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 24px; }
+  .spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+    vertical-align: middle; margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>音频转录 · Transcribe</h1>
+
+  <!-- LOGIN -->
+  <div class="card" id="view-login">
+    <label>访问密码</label>
+    <input id="pw" type="password" autocomplete="current-password" placeholder="请输入密码" />
+    <div class="err" id="login-err"></div>
+    <div style="margin-top: 14px;">
+      <button id="btn-login">进入</button>
+    </div>
+  </div>
+
+  <!-- UPLOAD -->
+  <div class="card hidden" id="view-upload">
+    <div class="drop" id="drop">
+      <div class="icon">⤴</div>
+      <div><strong>点击或拖拽音频文件</strong></div>
+      <div class="hint">仅支持 .mp3 / .m4a · 最大 500 MB</div>
+      <input id="file" type="file" accept=".mp3,.m4a,audio/mpeg,audio/mp4,audio/x-m4a" class="hidden" />
+    </div>
+
+    <div id="file-info" class="file-info hidden" style="margin-top:14px;">
+      <span class="name" id="fi-name"></span>
+      <span class="size" id="fi-size"></span>
+      <span class="x" id="fi-clear">✕</span>
+    </div>
+
+    <div class="grid-2" style="margin-top: 18px;">
+      <div>
+        <label>说话人数（可选，留空自动）</label>
+        <input id="speakers" type="number" min="1" max="10" placeholder="例如 2" />
+      </div>
+      <div>
+        <label>模型</label>
+        <select id="model">
+          <option value="large-v3" selected>large-v3（最准）</option>
+          <option value="medium">medium（更快）</option>
+          <option value="small">small（最快）</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="err" id="upload-err"></div>
+
+    <div class="row" style="margin-top: 16px;">
+      <button id="btn-upload" disabled>开始转录</button>
+      <button class="secondary" id="btn-logout" style="flex: 0 0 auto;">退出</button>
+    </div>
+  </div>
+
+  <!-- PROGRESS -->
+  <div class="card hidden" id="view-progress">
+    <div class="stage" id="stage-label"><span class="spinner"></span><span id="stage-text">准备中...</span></div>
+    <div class="progress-bar"><div class="fill" id="bar"></div></div>
+    <div class="stage-meta" id="stage-meta">已用 0s</div>
+
+    <div class="tip" id="tip">
+      正在处理你的音频，请保持页面打开。<br>
+      30 分钟音频通常 2–3 分钟出结果，1 小时大约 4–6 分钟。
+    </div>
+
+    <div class="err" id="progress-err"></div>
+  </div>
+
+  <!-- RESULT -->
+  <div class="card hidden" id="view-result">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <div><strong style="color: var(--ok);">✓ 完成</strong> <span class="muted" id="result-meta"></span></div>
+      <div class="row" style="flex:0 0 auto; gap:8px;">
+        <button id="btn-download">下载 .txt</button>
+        <button class="secondary" id="btn-again">再来一个</button>
+      </div>
+    </div>
+    <pre class="preview" id="preview"></pre>
+  </div>
+
+  <div class="footer">whisperx + pyannote · 跑在本地 GPU</div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const views = ["login", "upload", "progress", "result"];
+function showView(name) {
+  views.forEach(v => $("view-" + v).classList.toggle("hidden", v !== name));
+}
+
+const STAGE_LABELS = {
+  queued: "排队中",
+  starting: "正在启动",
+  loading_audio: "加载音频",
+  transcribing: "Whisper 转录中（这一步最慢）",
+  aligning: "对齐时间戳",
+  diarizing: "识别说话人",
+  writing: "生成文档",
+  done: "完成",
+};
+
+let currentJobId = null;
+let pollTimer = null;
+let startedAt = null;
+let elapsedTimer = null;
+
+function fmtSize(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + " KB";
+  if (bytes < 1024*1024*1024) return (bytes/1024/1024).toFixed(1) + " MB";
+  return (bytes/1024/1024/1024).toFixed(2) + " GB";
+}
+function fmtElapsed(ms) {
+  const s = Math.floor(ms/1000);
+  if (s < 60) return s + "s";
+  return Math.floor(s/60) + "m " + (s%60) + "s";
+}
+
+async function api(path, opts={}) {
+  const res = await fetch(path, { credentials: "same-origin", ...opts });
+  if (!res.ok) {
+    // HTTP/2 has no reason-phrase, so res.statusText is often empty when
+    // we're behind Cloudflare. Always lead with the numeric status so the
+    // user sees *something* (e.g. "HTTP 413" when CF blocks a >100MB upload).
+    let msg = `HTTP ${res.status}` + (res.statusText ? " " + res.statusText : "");
+    try { const j = await res.json(); if (j.detail) msg = j.detail; } catch {}
+    throw new Error(msg);
+  }
+  const ct = res.headers.get("content-type") || "";
+  return ct.includes("application/json") ? res.json() : res;
+}
+
+// Cloudflare's free/Pro plans cap a single request body at 100 MB. Above
+// ~90 MB we transparently switch to a 3-step chunked upload: init, PATCH
+// each 80 MB slice with an X-Offset header, then finalize. The server
+// reassembles into a normal job. The flow is invisible to the user beyond
+// a smoother upload progress bar.
+const CHUNK_SIZE = 80 * 1024 * 1024;
+const CHUNK_THRESHOLD = 90 * 1024 * 1024;
+
+async function uploadChunked(file, fields, onProgress) {
+  const fd0 = new FormData();
+  fd0.append("filename", file.name);
+  const initRes = await api("/api/uploads/init", { method: "POST", body: fd0 });
+  const uid = initRes.upload_id;
+
+  for (let offset = 0; offset < file.size; offset += CHUNK_SIZE) {
+    const end = Math.min(offset + CHUNK_SIZE, file.size);
+    const chunk = file.slice(offset, end);
+    await api(`/api/uploads/${uid}`, {
+      method: "PATCH",
+      headers: {
+        "X-Offset": String(offset),
+        "Content-Type": "application/octet-stream",
+      },
+      body: chunk,
+    });
+    if (onProgress) onProgress(end, file.size);
+  }
+
+  const fd = new FormData();
+  for (const [k, v] of Object.entries(fields)) {
+    if (v != null && v !== "") fd.append(k, v);
+  }
+  return api(`/api/uploads/${uid}/finalize`, { method: "POST", body: fd });
+}
+
+// ---- init: check auth ----
+(async () => {
+  try {
+    const me = await api("/api/me");
+    showView(me.authed ? "upload" : "login");
+  } catch {
+    showView("login");
+  }
+})();
+
+// ---- login ----
+$("btn-login").addEventListener("click", async () => {
+  const pw = $("pw").value.trim();
+  if (!pw) return;
+  $("login-err").textContent = "";
+  $("btn-login").disabled = true;
+  try {
+    const fd = new FormData();
+    fd.append("password", pw);
+    await api("/api/login", { method: "POST", body: fd });
+    $("pw").value = "";
+    showView("upload");
+  } catch (e) {
+    $("login-err").textContent = "密码错误";
+  } finally {
+    $("btn-login").disabled = false;
+  }
+});
+$("pw").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $("btn-login").click();
+});
+
+// ---- logout ----
+$("btn-logout").addEventListener("click", async () => {
+  await api("/api/logout", { method: "POST" });
+  showView("login");
+});
+
+// ---- file picking ----
+let pickedFile = null;
+const drop = $("drop");
+const fileInput = $("file");
+
+drop.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", (e) => {
+  if (e.target.files[0]) setFile(e.target.files[0]);
+});
+
+["dragenter","dragover"].forEach(ev =>
+  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); })
+);
+["dragleave","drop"].forEach(ev =>
+  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); })
+);
+drop.addEventListener("drop", e => {
+  if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+});
+
+function setFile(f) {
+  const name = (f.name || "").toLowerCase();
+  if (!(name.endsWith(".mp3") || name.endsWith(".m4a"))) {
+    $("upload-err").textContent = "只支持 .mp3 / .m4a";
+    return;
+  }
+  pickedFile = f;
+  $("fi-name").textContent = f.name;
+  $("fi-size").textContent = fmtSize(f.size);
+  $("file-info").classList.remove("hidden");
+  $("btn-upload").disabled = false;
+  $("upload-err").textContent = "";
+}
+$("fi-clear").addEventListener("click", () => {
+  pickedFile = null;
+  fileInput.value = "";
+  $("file-info").classList.add("hidden");
+  $("btn-upload").disabled = true;
+});
+
+// ---- start job ----
+$("btn-upload").addEventListener("click", async () => {
+  if (!pickedFile) return;
+  $("btn-upload").disabled = true;
+  $("upload-err").textContent = "";
+  try {
+    const fields = { model: $("model").value };
+    const sp = $("speakers").value.trim();
+    if (sp) fields.speakers = sp;
+
+    $("stage-text").textContent = "上传中...";
+    $("bar").style.width = "0%";
+    showView("progress");
+    startedAt = Date.now();
+    startElapsedTicker();
+
+    let res;
+    if (pickedFile.size > CHUNK_THRESHOLD) {
+      res = await uploadChunked(pickedFile, fields, (done, total) => {
+        const pct = Math.round((done / total) * 100);
+        $("stage-text").textContent = `上传中... ${pct}%`;
+        $("bar").style.width = pct + "%";
+      });
+    } else {
+      const fd = new FormData();
+      fd.append("file", pickedFile);
+      for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+      res = await api("/api/jobs", { method: "POST", body: fd });
+    }
+    currentJobId = res.job_id;
+    pollJob();
+  } catch (e) {
+    $("upload-err").textContent = "上传失败：" + e.message;
+    showView("upload");
+    $("btn-upload").disabled = false;
+  }
+});
+
+function startElapsedTicker() {
+  stopElapsedTicker();
+  elapsedTimer = setInterval(() => {
+    if (startedAt) $("stage-meta").textContent = "已用 " + fmtElapsed(Date.now() - startedAt);
+  }, 1000);
+}
+function stopElapsedTicker() {
+  if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+}
+
+async function pollJob() {
+  try {
+    const j = await api("/api/jobs/" + currentJobId);
+    const label = STAGE_LABELS[j.stage] || j.stage;
+    if (j.status === "queued" && j.queue_position > 1) {
+      $("stage-text").textContent = "排队中 (第 " + j.queue_position + " 位)";
+    } else {
+      $("stage-text").textContent = label;
+    }
+    $("bar").style.width = Math.max(2, Math.round(j.progress * 100)) + "%";
+
+    if (j.status === "done") {
+      stopElapsedTicker();
+      const elapsed = j.finished_at && j.started_at ? Math.round(j.finished_at - j.started_at) : null;
+      $("result-meta").textContent = elapsed ? "· 用时 " + elapsed + "s" : "";
+      const pv = await api("/api/jobs/" + currentJobId + "/preview");
+      $("preview").textContent = pv.text;
+      showView("result");
+      return;
+    }
+    if (j.status === "error") {
+      stopElapsedTicker();
+      $("progress-err").textContent = "失败：" + (j.error || "未知错误");
+      return;
+    }
+  } catch (e) {
+    $("progress-err").textContent = "状态查询失败：" + e.message;
+  }
+  pollTimer = setTimeout(pollJob, 1500);
+}
+
+// ---- result ----
+$("btn-download").addEventListener("click", () => {
+  window.location.href = "/api/jobs/" + currentJobId + "/result";
+});
+$("btn-again").addEventListener("click", () => {
+  currentJobId = null;
+  pickedFile = null;
+  fileInput.value = "";
+  $("file-info").classList.add("hidden");
+  $("btn-upload").disabled = true;
+  $("speakers").value = "";
+  $("preview").textContent = "";
+  showView("upload");
+});
+</script>
+</body>
+</html>

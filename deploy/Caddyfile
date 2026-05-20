@@ -1,0 +1,15 @@
+# Drop into your existing Caddyfile (or use as a standalone Caddyfile).
+# Caddy auto-provisions TLS for transcribe.bjjwwangs.win.
+
+transcribe.bjjwwangs.win {
+    encode zstd gzip
+    request_body {
+        max_size 500MB
+    }
+    reverse_proxy 127.0.0.1:8765 {
+        transport http {
+            read_timeout  10m
+            write_timeout 10m
+        }
+    }
+}

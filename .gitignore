@@ -1,0 +1,24 @@
+# Secrets — never commit
+.env
+
+# Runtime artifacts
+logs/
+output/
+uploads/
+.cache/
+audio/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Editor / IDE / agent metadata
+.claude/
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
