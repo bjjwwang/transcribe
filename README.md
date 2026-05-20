@@ -13,6 +13,10 @@ This is **not a product**. It runs on one GPU box, takes one user at a time,
 and is sized for our own use. The interesting bits are in the deployment
 notes below — most of those were paid for in production outages.
 
+> Setting this up on a new GPU host? Start with **[docs/DEPLOY-NEW-HOST.md](docs/DEPLOY-NEW-HOST.md)**,
+> which walks through driver/permission checks, env build, Cloudflare Tunnel
+> setup (reuse-existing vs new-tunnel), and an acceptance checklist.
+
 ## Architecture
 
 ```
