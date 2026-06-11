@@ -33,8 +33,34 @@ from whisperx.diarize import DiarizationPipeline
 
 
 def release_gpu_memory():
-    """Drop refs and ask CUDA to return cached VRAM to the OS."""
+    """Release loaded models + cached GPU/unified memory back to the OS.
+
+    Covers MLX (Apple GPU) and torch MPS/CUDA so an idle service stops holding
+    the ~3 GB whisper model in unified memory. The next request reloads it
+    lazily (a few seconds of cold-start).
+    """
+    # 1) Drop MLX whisper's cached model — it's pinned in a class attribute
+    #    (ModelHolder.model) and survives across transcribe() calls otherwise.
+    try:
+        from mlx_whisper.transcribe import ModelHolder
+        ModelHolder.model = None
+        ModelHolder.model_path = None
+    except Exception:
+        pass
     gc.collect()
+    # 2) Return MLX's Metal buffer pool to the OS.
+    try:
+        import mlx.core as mx
+        mx.clear_cache()
+    except Exception:
+        pass
+    # 3) torch MPS cache (pyannote diarization on Apple GPU).
+    try:
+        if torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+    except Exception:
+        pass
+    # 4) CUDA (no-op on Mac).
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
         try:
@@ -197,6 +223,88 @@ def run_pipeline(
     finally:
         del asr_model, align_model, diarize, audio
         release_gpu_memory()
+
+
+def run_pipeline_gpu(
+    audio_path: str,
+    output_path: str,
+    *,
+    num_speakers: Optional[int] = None,
+    min_speakers: Optional[int] = None,
+    max_speakers: Optional[int] = None,
+    language: Optional[str] = None,
+    mlx_model: Optional[str] = None,
+    hf_token: Optional[str] = None,
+    progress_cb: ProgressCb = None,
+    **_ignored,
+) -> str:
+    """Apple-GPU pipeline: MLX whisper (Metal) for ASR + pyannote diarization on
+    MPS, merged into speaker blocks. ~40-70x faster than the CPU path on Apple
+    Silicon. `language=None` lets MLX auto-detect.
+    """
+    os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+    load_env()
+    hf_token = hf_token or os.environ.get("HF_TOKEN")
+    if not hf_token:
+        raise RuntimeError("HF_TOKEN not set")
+    mlx_model = mlx_model or os.environ.get("MLX_WHISPER_MODEL") or str(
+        Path(__file__).parent / "models" / "whisper-large-v3-mlx"
+    )
+
+    audio_path = str(Path(audio_path).resolve())
+    if not Path(audio_path).exists():
+        raise FileNotFoundError(audio_path)
+
+    import mlx_whisper
+    import whisperx
+    from whisperx.diarize import DiarizationPipeline
+
+    # 1) Transcribe on the Apple GPU via MLX (single call, no fine-grained progress).
+    _emit(progress_cb, "transcribing", 0.05)
+    r = mlx_whisper.transcribe(
+        audio_path, path_or_hf_repo=mlx_model,
+        language=language, word_timestamps=True, verbose=False,
+    )
+    _emit(progress_cb, "transcribing", 0.60)
+
+    # Reshape MLX output into the structure whisperx.assign_word_speakers expects.
+    segments = []
+    for s in r["segments"]:
+        words = [
+            {"word": w["word"], "start": w.get("start"), "end": w.get("end")}
+            for w in s.get("words", []) if w.get("start") is not None
+        ]
+        segments.append({"start": s["start"], "end": s["end"], "text": s["text"], "words": words})
+    result = {"segments": segments}
+
+    # 2) Diarize on the Apple GPU (MPS); unsupported ops fall back to CPU.
+    _emit(progress_cb, "diarizing", 0.65)
+    audio = whisperx.load_audio(audio_path)
+    diarize = DiarizationPipeline(
+        model_name="pyannote/speaker-diarization-community-1",
+        token=hf_token, device="mps",
+    )
+    dkw = {}
+    if num_speakers is not None:
+        dkw["num_speakers"] = num_speakers
+    if min_speakers is not None:
+        dkw["min_speakers"] = min_speakers
+    if max_speakers is not None:
+        dkw["max_speakers"] = max_speakers
+    diarize_segments = diarize(audio, **dkw)
+    result = whisperx.assign_word_speakers(diarize_segments, result)
+    _emit(progress_cb, "diarizing", 0.90)
+
+    # 3) Merge + render.
+    _emit(progress_cb, "writing", 0.95)
+    blocks = merge_into_speaker_blocks(result["segments"])
+    blocks = normalize_speaker_labels(blocks)
+    text = render(blocks)
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text)
+    _emit(progress_cb, "done", 1.0)
+    return text
 
 
 def main():

@@ -422,10 +422,9 @@ async def run_job(job_id: str):
             j["progress"] = float(pct)
 
         try:
-            await loop.run_in_executor(None, lambda: ts_mod.run_pipeline(
+            await loop.run_in_executor(None, lambda: ts_mod.run_pipeline_gpu(
                 audio_path=j["audio_path"],
                 output_path=j["output_path"],
-                model=j["model"],
                 num_speakers=j["speakers"],
                 progress_cb=progress,
             ))
