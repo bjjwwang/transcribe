@@ -8,11 +8,16 @@ uploads/
 .cache/
 audio/
 
-# Python
+# Python / virtualenvs
 __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
+.venv/
+.venv-mlx/
+
+# Downloaded model weights (faster-whisper-large-v3, whisper-large-v3-mlx, ...)
+models/
 
 # Editor / IDE / agent metadata
 .claude/
